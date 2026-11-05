@@ -3,6 +3,8 @@ name = "lazycontroller"
 version = "0.1.0"
 description = "Drop-in wrapper for the OpenAI SDK that tries a fast model first and calls the slow model only when confidence is low."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "openai>=3.44,<4",
