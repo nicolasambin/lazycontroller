@@ -60,6 +60,11 @@ For `chat.completions.create` / `parse` and `responses.create` / `parse`:
 2. **Ask the fast model.** All fields go in one request, with the conversation as state and
    each field's name and `description` as its instructions. Good field descriptions help a
    decision model the same way they help an LLM.
+
+   The conversation is sent as a plain-text transcript, one `Role: content` paragraph per
+   message (`System: …`, `User: …`, `Assistant: …`). Some System One servers accept any JSON
+   as state, others only a string; plain text works with all of them, and on the models we
+   measured it gives the same answers and confidence as a JSON list of messages.
 3. **Gate on confidence.** If *every* field's confidence reaches the threshold (default 0.9),
    lazycontroller builds a real `ChatCompletion` / `ParsedChatCompletion` / `Response` /
    `ParsedResponse` from the fast model's answer. Otherwise the original request goes to the

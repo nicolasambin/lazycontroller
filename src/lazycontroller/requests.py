@@ -43,7 +43,8 @@ _RESPONSES_INPUTS = {"input", "instructions", "text"}
 
 @dataclass(frozen=True)
 class Request:
-    state: dict[str, Any]
+    state: str
+    """The conversation as a plain-text transcript (see ``transcript``)."""
     schema: Mapping[str, Any]
     name: str | None
 
@@ -108,7 +109,17 @@ def _request(turns: list[dict[str, str]], schema: Any, name: str | None) -> Requ
         raise Ineligible("json_schema has no schema")
     if not any(turn["role"] == "user" for turn in turns):
         raise Ineligible("no user message")
-    return Request({"conversation": turns}, schema, name)
+    return Request(transcript(turns), schema, name)
+
+
+def transcript(turns: list[dict[str, str]]) -> str:
+    """Render the conversation as ``Role: content`` paragraphs.
+
+    Plain text is the one state format every System One server accepts: some take any JSON,
+    others (Span on OpenRouter, for one) only a string. On Kev it answered the same as a JSON
+    message list, with the same confidence.
+    """
+    return "\n\n".join(f"{turn['role'].capitalize()}: {turn['content']}" for turn in turns)
 
 
 def _chat_turn(message: Any) -> dict[str, str]:
