@@ -148,3 +148,7 @@ uv run pytest                              # tests (both models are faked, no ke
 uv run --python 3.13 --isolated pytest     # tests on the minimum version
 uv run ruff check && uv run ruff format    # lint and format
 ```
+
+## License
+
+[Apache License 2.0](LICENSE).
