@@ -64,13 +64,10 @@ def test_confident_fast_model_answers_chat_parse_alone(make_client, routes):
     assert route.confidence == pytest.approx(0.98)
     assert set(route.field_confidences) == {"team", "is_urgent", "severity"}
 
-    state = jev.requests[0]["state"]
-    assert state == {
-        "conversation": [
-            {"role": "system", "content": "Triage the support ticket."},
-            MESSAGES[1],
-        ]
-    }
+    assert jev.requests[0]["state"] == (
+        "System: Triage the support ticket.\n\n"
+        "User: Every API call returns 500 since 20 minutes ago!"
+    )
 
 
 def test_low_confidence_falls_back_to_the_requested_model(make_client, routes):
@@ -227,10 +224,10 @@ def test_responses_parse_answered_by_fast_model(make_client, routes):
     assert fake_openai.requests == []
     assert response.output_parsed == Ticket(team="technical", is_urgent=True, severity=3)
     assert response.model == "jev-1.13.0"
-    assert jev.requests[0]["state"]["conversation"][0] == {
-        "role": "system",
-        "content": "Triage the support ticket.",
-    }
+    assert jev.requests[0]["state"] == (
+        "System: Triage the support ticket.\n\n"
+        "User: Every API call returns 500 since 20 minutes ago!"
+    )
     assert routes[0].api == "responses"
 
 
@@ -455,3 +452,29 @@ def test_answer_rejected_by_callers_validator_goes_to_openai(make_client, routes
     assert completion.choices[0].message.parsed.team == "billing"
     assert len(fake_openai.requests) == 1
     assert routes[0].reason == "fast_model_error"
+
+
+def test_transcript_keeps_roles_order_and_content_parts():
+    from lazycontroller.requests import chat_request
+
+    request = chat_request(
+        {
+            "model": "gpt-5",
+            "messages": [
+                {"role": "developer", "content": "Classify."},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "first"},
+                        {"type": "text", "text": "second"},
+                    ],
+                },
+                {"role": "assistant", "content": "Which product?"},
+                {"role": "user", "content": "The API."},
+            ],
+            "response_format": {"type": "json_schema", "json_schema": {"name": "t", "schema": {}}},
+        }
+    )
+    assert request.state == (
+        "System: Classify.\n\nUser: first\nsecond\n\nAssistant: Which product?\n\nUser: The API."
+    )
