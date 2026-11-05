@@ -116,8 +116,8 @@ def transcript(turns: list[dict[str, str]]) -> str:
     """Render the conversation as ``Role: content`` paragraphs.
 
     Plain text is the one state format every System One server accepts: some take any JSON,
-    others (Span on OpenRouter, for one) only a string. On Kev it answered the same as a JSON
-    message list, with the same confidence.
+    others only a string. On Kev it answered the same as a JSON message list, with the same
+    confidence.
     """
     return "\n\n".join(f"{turn['role'].capitalize()}: {turn['content']}" for turn in turns)
 
