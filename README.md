@@ -192,6 +192,8 @@ Route fields, shadow mode and `ShadowReport`: [routing](docs/routing.md).
 - Keys go only where they belong: `fast_api_key` is sent only to `fast_base_url`, and no
   key is picked up from the environment for the fast side.
 
+To report a security issue, see [SECURITY.md](SECURITY.md).
+
 ## Limitations
 
 - Forced tool calls (`tool_choice` with a function) aren't treated as structured output yet,
