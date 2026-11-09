@@ -13,6 +13,7 @@ After every intercepted call, `LazyConfig.on_route` receives a `Route`:
 | `fast_model` | the decision model that answered, when it was asked |
 | `confidence` | the lowest field confidence, compared with the threshold |
 | `field_confidences` | confidence per field, keyed by dotted path |
+| `fast_output` | the fast model's answer as a JSON object, whenever it was asked, even if the slow model answered in the end |
 | `fast_input_tokens` | tokens the fast model billed |
 | `detail` | why the request was ineligible, or the fast model's error |
 | `shadow_mismatches` | in shadow mode, the fields where the two models disagreed |
@@ -66,7 +67,8 @@ The answer isn't stored by the slow model's provider, so `store=True` has no eff
 ## Shadow mode
 
 `LazyConfig(shadow=True)` asks both models, always returns the slow model's answer, and fills
-`Route.shadow_mismatches` with the fields where the two disagreed. Nothing changes for your
+`Route.shadow_mismatches` with the fields where the two disagreed; `Route.fast_output` holds
+what the fast model would have answered. Nothing changes for your
 users, and you get the data to decide whether, and at which threshold, to let the fast model
 answer.
 
@@ -76,22 +78,52 @@ The default, 0.9, is cautious. The right value depends on the decision model and
 wrong answer costs you.
 
 1. Run in shadow mode on real traffic for a while, collecting routes.
-2. For each candidate threshold, count how many calls the fast model would have taken
-   (`confidence >= t`) and how often it agreed with the slow model on those.
-3. Pick the lowest threshold whose disagreement rate you can live with, and turn shadow off.
-   Use `with_lazy` to keep a higher threshold where mistakes are expensive.
+2. Feed them to a `ShadowReport`: for any threshold it tells you how much traffic the fast
+   model would take and how often it would agree with the slow one.
+3. Pick the threshold, turn shadow off, and use `with_lazy` to keep a higher one where
+   mistakes are expensive.
 
 ```python
-scored = [r for r in routes if r.reason == "shadow"]
-for t in (0.5, 0.6, 0.7, 0.8, 0.9):
-    taken = [r for r in scored if r.confidence >= t]
-    agreed = sum(not r.shadow_mismatches for r in taken)
-    print(f"{t}: fast takes {len(taken)}/{len(scored)}, agrees on {agreed}/{len(taken)}")
+from lazycontroller import ShadowReport
+
+report = ShadowReport(routes)  # non-shadow routes are ignored
+print(report.table())
+
+report.threshold(min_agreement=0.98)  # e.g. 0.78, or None if there isn't enough data
+report.at(0.78)  # Point(threshold=0.78, taken=14, agreed=14, total=22)
 ```
 
-Agreement is not correctness: when the two disagree, the slow model is sometimes the one that's
-wrong. Look at a sample of the disagreements before deciding.
+```
+22 shadow calls
 
-Small local decision models are less sure of themselves than large hosted ones: with
-`kev:0.8b-q8_0`, 0.7–0.8 was the useful range in our tests, while 0.9 let almost nothing
-through.
+confidence band   calls  agreement
+  0.90-1.00           9  9/9 (100%)
+  0.70-0.90           6  5/6 (83%)
+  0.00-0.70           7  3/7 (43%)
+
+threshold   fast takes      agreement
+  0.50      19/22 (86%)     16/19 (84%)
+  0.60      17/22 (77%)     15/17 (88%)
+  0.70      15/22 (68%)     14/15 (93%)
+  0.80      12/22 (55%)     12/12 (100%)
+  0.90      9/22 (41%)      9/9 (100%)
+```
+
+| Method | Returns |
+|---|---|
+| `table(thresholds=...)` | the plain-text summary above |
+| `threshold(min_agreement, min_samples=20)` | the lowest threshold at which agreement stays at or above `min_agreement`, at that threshold and every higher one covering at least `min_samples` calls; `None` if no threshold qualifies |
+| `at(threshold)` | a `Point` with `taken`, `agreed`, `total`, `coverage` and `agreement` |
+| `curve(thresholds=...)` | a list of `Point`s, by default every 0.05 from 0 to 1: ready to plot coverage and agreement against the threshold |
+| `bands(edges=...)` | calls grouped by confidence, with their agreement |
+
+`threshold` looks for agreement that *stays* above the bar from that point up, so a lucky
+stretch can't pull it down, and it won't answer from a handful of calls: with too little shadow
+traffic it returns `None`.
+
+Agreement is not correctness: when the two disagree, the slow model is sometimes the one that's
+wrong, and on ambiguous inputs either answer can be defensible. `Route.fast_output` shows what
+the fast model would have said; look at a sample of the disagreements before deciding.
+
+Small local decision models are much less sure of themselves than hosted ones: expect a lower
+useful threshold, or most calls to stay on the slow side.

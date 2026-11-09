@@ -12,8 +12,8 @@ by changing one import.
 
 ## Why
 
-Codebases everywhere are full of `OpenAI()` clients asking GPT-class models to classify a
-ticket, flag a message or pick a category, and paying LLM prices and latency for what is really
+Codebases everywhere are full of `OpenAI()` clients asking GPT-class models to categorize a
+transaction, flag a message or pick a label, and paying LLM prices and latency for what is really
 a decision. Decision models now do that job in milliseconds, for a fraction of the cost, and
 tell you how sure they are. You don't need to rewrite anything to use them: change one import.
 
@@ -43,55 +43,66 @@ or `uv add lazycontroller`. Requires Python 3.13+.
 
 ## Quickstart
 
-This runs entirely on your machine with [Ollama](https://ollama.com): `kev`, a decision model,
-as the fast side and `qwen3.5:4b` as the slow one.
-
-```bash
-ollama pull kev:0.8b-q8_0
-ollama pull qwen3.5:4b
-```
+Your existing OpenAI client stays the slow side; the fast side here is Jev, a decision model,
+reached through OpenRouter.
 
 ```python
+import os
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from lazycontroller import LazyConfig, OpenAI, Route
+from lazycontroller import LazyConfig, OpenAI
 
-routes: list[Route] = []
-client = OpenAI(
-    base_url="http://localhost:11434/v1",  # the slow model: any OpenAI-compatible API
-    lazy=LazyConfig(
-        fast_model="kev:0.8b-q8_0",  # the fast model: a System One decision model
-        fast_base_url="http://localhost:11434",
-        threshold=0.7,
-        on_route=routes.append,
+client = OpenAI(  # the slow side, as before: reads OPENAI_API_KEY
+    lazy=LazyConfig(  # the fast side: a System One decision model
+        fast_model="typesafe/jev-1.14",
+        fast_base_url="https://openrouter.ai/api",
+        fast_api_key=os.environ["OPENROUTER_API_KEY"],
     ),
 )
 
 
-class Ticket(BaseModel):
-    team: Literal["billing", "technical", "sales"] = Field(
-        description="Which team should handle it"
+class Transaction(BaseModel):
+    category: Literal[
+        "groceries",
+        "dining",
+        "transport",
+        "shopping",
+        "subscriptions",
+        "utilities",
+        "income",
+        "transfer",
+    ] = Field(description="What the money was spent on, or where it came from")
+
+
+for line in ["NETFLIX.COM 866-579-7172 CA", "GITHUB, INC. SAN FRANCISCO"]:
+    completion = client.chat.completions.parse(
+        model="gpt-6-luna",
+        messages=[
+            {"role": "system", "content": "Categorize this bank transaction."},
+            {"role": "user", "content": line},
+        ],
+        response_format=Transaction,
     )
+    print(line, "->", completion.choices[0].message.parsed.category, "by", completion.model)
 
-
-completion = client.chat.completions.parse(
-    model="qwen3.5:4b",
-    messages=[
-        {"role": "system", "content": "Triage this customer support ticket."},
-        {"role": "user", "content": "Every API call has returned 500 for the last 20 minutes!"},
-    ],
-    response_format=Ticket,
-)
-
-print(completion.choices[0].message.parsed)  # team='technical'
-print(completion.model, routes[-1].reason)  # kev:0.8b-q8_0 confident
+# NETFLIX.COM 866-579-7172 CA -> subscriptions by typesafe/jev-1.14-20261014
+# GITHUB, INC. SAN FRANCISCO -> ... by gpt-6-luna-...
 ```
 
-With OpenAI as the slow side, drop `base_url`, keep your `model="gpt-5"`, and point
-`LazyConfig` at the decision model you want (below). The rest of your code doesn't change:
-whoever answers, you get the same `ParsedChatCompletion`.
+Jev is certain the first line is a subscription (confidence 1.00), so it answers and GPT is
+never called. The second could be a subscription or a one-off purchase; Jev is less sure
+(around 0.7–0.8, below the default threshold of 0.9), so the call goes to GPT as it always did.
+Either way you get the same `ParsedChatCompletion`.
+
+[`examples/transactions.ipynb`](examples/transactions.ipynb) goes further: shadow mode on ten
+transactions, a threshold sweep, `with_lazy`, a call that isn't a decision, and the same thing
+running locally with Ollama. It needs no Jupyter in your project:
+
+```bash
+uv run --with jupyterlab --with matplotlib --env-file .env jupyter lab examples/transactions.ipynb
+```
 
 ## Choosing a fast model
 
@@ -100,8 +111,8 @@ API (OpenAI, OpenRouter, Ollama, vLLM, ...).
 
 | Fast model server | `fast_base_url` | `fast_api_key` | Example `fast_model` |
 |---|---|---|---|
-| TypeSafe | (default) | `TYPESAFE_API_KEY` | `None` (`jev-latest`) |
-| OpenRouter | `"https://openrouter.ai/api"` | your OpenRouter key | `"typesafe/jev-1.13"` |
+| TypeSafe | `"https://api.typesafe.ai"` | your TypeSafe key | `"jev-latest"` |
+| OpenRouter | `"https://openrouter.ai/api"` | your OpenRouter key | `"typesafe/jev-1.14"` |
 | Ollama (local) | `"http://localhost:11434"` | none | `"kev:0.8b-q8_0"` |
 
 Decision models don't all support the same questions: some answer yes/no only.
@@ -115,8 +126,8 @@ For `chat.completions.create` / `parse` and `responses.create` / `parse`:
    (Choice), `bool` (yes/no), small integer ranges (Score), optionally nested or `| None`. A
    free-text field, tools, streaming, images and the like send the call to the slow model
    untouched.
-2. **Ask the fast model.** All fields go in one request, with the conversation as a plain-text
-   transcript and each field's `description` as its question.
+2. **Ask the fast model.** All fields go in one request, with the conversation as structured
+   JSON state and each field's `description` as its question.
 3. **Gate on confidence.** If *every* field reaches the threshold, lazycontroller builds a real
    OpenAI response object from the fast answer. Otherwise the original request goes to the slow
    model. It's all or nothing, so you never get a half-fast, half-slow answer.
@@ -136,9 +147,9 @@ requests](docs/schemas.md).
 LazyConfig(
     enabled=True,  # False sends everything to the slow model
     threshold=0.9,  # min confidence of every field
+    fast_base_url=None,  # the System One server; None turns the fast side off
+    fast_api_key=None,  # key for fast_base_url, sent nowhere else
     fast_model=None,  # the decision model; None means the server's default
-    fast_base_url=None,  # None means TypeSafe
-    fast_api_key=None,  # defaults to TYPESAFE_API_KEY on TypeSafe
     shadow=False,  # ask both, return the slow answer, report disagreements
     on_route=None,  # called with a Route after every intercepted call
 )
@@ -158,10 +169,18 @@ Every intercepted call produces a `Route`: who answered (`fast` or `slow`), why,
 confidence of each field. Collect them to see how much traffic the fast model takes.
 
 The default threshold, 0.9, is cautious. To choose yours, run with `shadow=True` on real
-traffic: both models answer, your users get the slow answer, and each route lists where the two
-disagreed. Then pick the lowest threshold whose disagreement rate you can accept.
+traffic: both models answer, your users get the slow answer, and each route records whether the
+two agreed. A `ShadowReport` turns those routes into coverage and agreement per threshold:
 
-Route fields, shadow mode and a threshold sweep: [routing](docs/routing.md).
+```python
+from lazycontroller import ShadowReport
+
+report = ShadowReport(routes)
+print(report.table())
+report.threshold(min_agreement=0.98)  # lowest threshold that keeps 98% agreement
+```
+
+Route fields, shadow mode and `ShadowReport`: [routing](docs/routing.md).
 
 ## Data and privacy
 
@@ -170,8 +189,8 @@ Route fields, shadow mode and a threshold sweep: [routing](docs/routing.md).
   enabling it. A local fast model keeps everything on your machine.
 - In shadow mode, eligible calls go to both providers.
 - Free models on some platforms may use requests for training; don't send real data to them.
-- Keys go only where they belong: `TYPESAFE_API_KEY` is sent only to TypeSafe, and a custom
-  `fast_base_url` receives only the `fast_api_key` you give it.
+- Keys go only where they belong: `fast_api_key` is sent only to `fast_base_url`, and no
+  key is picked up from the environment for the fast side.
 
 ## Limitations
 
@@ -193,8 +212,8 @@ uv run --python 3.13 --isolated pytest     # tests on the minimum version
 uv run ruff check && uv run ruff format    # lint and format
 ```
 
-[`examples/ollama_local.py`](examples/ollama_local.py) compares a local decision model with a
-local LLM in shadow mode.
+[`examples/transactions.ipynb`](examples/transactions.ipynb) is a runnable tour of the library;
+`uv run --with jupyterlab --with matplotlib` opens it without adding either to the project.
 
 ## License
 

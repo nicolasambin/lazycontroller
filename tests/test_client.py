@@ -64,10 +64,12 @@ def test_confident_fast_model_answers_chat_parse_alone(make_client, routes):
     assert route.confidence == pytest.approx(0.98)
     assert set(route.field_confidences) == {"team", "is_urgent", "severity"}
 
-    assert jev.requests[0]["state"] == (
-        "System: Triage the support ticket.\n\n"
-        "User: Every API call returns 500 since 20 minutes ago!"
-    )
+    assert jev.requests[0]["state"] == {
+        "conversation": [
+            {"role": "system", "content": "Triage the support ticket."},
+            {"role": "user", "content": "Every API call returns 500 since 20 minutes ago!"},
+        ]
+    }
 
 
 def test_low_confidence_falls_back_to_the_requested_model(make_client, routes):
@@ -81,6 +83,7 @@ def test_low_confidence_falls_back_to_the_requested_model(make_client, routes):
     assert completion.choices[0].message.parsed == Ticket(**OPENAI_TICKET)
     assert routes[0].reason == "low_confidence"
     assert routes[0].confidence == pytest.approx(0.6)
+    assert routes[0].fast_output == {"team": "technical", "is_urgent": True, "severity": 3}
 
 
 def test_threshold_is_configurable(make_client):
@@ -106,6 +109,7 @@ def test_free_text_field_goes_to_openai(make_client, routes):
         "ineligible",
         "summary: free-text string",
     )
+    assert routes[0].fast_output is None
 
 
 def test_chat_create_with_json_schema_dict(make_client, routes):
@@ -175,12 +179,12 @@ def test_plain_chat_without_schema_is_untouched(make_client, routes):
     assert routes[0].reason == "ineligible"
 
 
-def test_no_typesafe_key_means_plain_openai(make_client, routes, monkeypatch):
-    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+def test_no_fast_base_url_means_plain_openai(make_client, routes, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")  # no longer a default
     client, fake_openai = make_client(None, OPENAI_TICKET)
     client.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
     assert len(fake_openai.requests) == 1
-    assert routes[0].reason == "disabled"
+    assert (routes[0].reason, routes[0].detail) == ("disabled", "no fast_base_url")
 
 
 def test_fast_model_errors_fall_back_to_slow_model(make_client, routes):
@@ -208,6 +212,7 @@ def test_shadow_mode_returns_openai_and_reports_disagreements(make_client, route
     route = routes[0]
     assert (route.answered_by, route.reason) == ("slow", "shadow")
     assert route.shadow_mismatches == ("is_urgent",)
+    assert route.fast_output == {"team": "technical", "is_urgent": True, "severity": 3}
 
 
 def test_responses_parse_answered_by_fast_model(make_client, routes):
@@ -224,10 +229,12 @@ def test_responses_parse_answered_by_fast_model(make_client, routes):
     assert fake_openai.requests == []
     assert response.output_parsed == Ticket(team="technical", is_urgent=True, severity=3)
     assert response.model == "jev-1.13.0"
-    assert jev.requests[0]["state"] == (
-        "System: Triage the support ticket.\n\n"
-        "User: Every API call returns 500 since 20 minutes ago!"
-    )
+    assert jev.requests[0]["state"] == {
+        "conversation": [
+            {"role": "system", "content": "Triage the support ticket."},
+            {"role": "user", "content": "Every API call returns 500 since 20 minutes ago!"},
+        ]
+    }
     assert routes[0].api == "responses"
 
 
@@ -411,12 +418,13 @@ def test_explicit_key_goes_to_the_configured_server(auth_server, monkeypatch):
     assert seen == ["Bearer provider-key"]
 
 
-def test_typesafe_key_from_env_goes_to_typesafe(auth_server, monkeypatch):
+def test_typesafe_environment_variables_are_ignored(auth_server, monkeypatch, routes):
     url, seen = auth_server
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")
-    monkeypatch.setenv("TYPESAFE_BASE_URL", url)  # stands in for api.typesafe.ai
-    _parse_through_router(lazycontroller.LazyConfig())
-    assert seen == ["Bearer ts-secret"]
+    monkeypatch.setenv("TYPESAFE_BASE_URL", url)
+    assert _parse_through_router(lazycontroller.LazyConfig(on_route=routes.append)) == "slow model"
+    assert seen == []
+    assert routes[0].reason == "disabled"
 
 
 def test_unreadable_request_goes_to_openai(make_client, routes):
@@ -454,7 +462,7 @@ def test_answer_rejected_by_callers_validator_goes_to_openai(make_client, routes
     assert routes[0].reason == "fast_model_error"
 
 
-def test_transcript_keeps_roles_order_and_content_parts():
+def test_state_keeps_roles_order_and_content_parts():
     from lazycontroller.requests import chat_request
 
     request = chat_request(
@@ -475,6 +483,11 @@ def test_transcript_keeps_roles_order_and_content_parts():
             "response_format": {"type": "json_schema", "json_schema": {"name": "t", "schema": {}}},
         }
     )
-    assert request.state == (
-        "System: Classify.\n\nUser: first\nsecond\n\nAssistant: Which product?\n\nUser: The API."
-    )
+    assert request.state == {
+        "conversation": [
+            {"role": "system", "content": "Classify."},
+            {"role": "user", "content": "first\nsecond"},
+            {"role": "assistant", "content": "Which product?"},
+            {"role": "user", "content": "The API."},
+        ]
+    }

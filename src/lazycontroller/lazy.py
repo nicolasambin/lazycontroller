@@ -7,7 +7,6 @@ OpenAI-compatible client was going to call anyway.
 
 import json
 import logging
-import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Self
@@ -45,6 +44,9 @@ class Route:
     confidence: float | None = None
     """The lowest field confidence, which is what the threshold is compared with."""
     field_confidences: Mapping[str, float] = field(default_factory=dict)
+    fast_output: Mapping[str, Any] | None = None
+    """The fast model's answer as a JSON object, whenever it was asked (also when the slow model
+    answered in the end, so shadow disagreements can be inspected)."""
     fast_input_tokens: int | None = None
     detail: str | None = None
     """Why the request was ineligible, or the fast model's error."""
@@ -60,14 +62,14 @@ class LazyConfig:
     """``False`` sends every call straight to the slow model."""
     threshold: float = 0.9
     """Every field's confidence must reach this for the fast model's answer to be used."""
-    fast_model: str | None = None
-    """``None`` means the server's default (``jev-latest`` on TypeSafe)."""
-    fast_api_key: str | None = None
-    """Defaults to ``TYPESAFE_API_KEY`` on TypeSafe. With ``fast_base_url``, only this key is
-    sent; without any key, every call goes to the slow model."""
     fast_base_url: str | None = None
-    """A System One server other than TypeSafe: ``http://localhost:11434`` for a decision model
-    served by Ollama, or another provider. Local servers need no key."""
+    """The System One server: ``https://api.typesafe.ai``, ``https://openrouter.ai/api``,
+    ``http://localhost:11434`` for Ollama, ... Without it (or ``fast_client``) the fast side is
+    off and every call goes to the slow model."""
+    fast_api_key: str | None = None
+    """Key for ``fast_base_url``, and sent nowhere else. Local servers need none."""
+    fast_model: str | None = None
+    """The decision model; ``None`` means the server's default."""
     shadow: bool = False
     """Ask the fast model but always return the slow model's answer, reporting where they
     differ."""
@@ -89,15 +91,10 @@ class _Router[C]:
     @property
     def fast(self) -> C | None:
         if self._fast is None:
-            base_url = self.config.fast_base_url
-            if base_url:
-                # Another server (a local Kev, another provider): only a key given for it.
-                # TYPESAFE_API_KEY is never sent there. The SDK insists on some key, and
-                # local servers ignore it.
+            if base_url := self.config.fast_base_url:
+                # Passed explicitly, so the SDK reads neither TYPESAFE_API_KEY nor
+                # TYPESAFE_BASE_URL. It insists on some key; local servers ignore it.
                 api_key = self.config.fast_api_key or "local"
-            else:
-                api_key = self.config.fast_api_key or os.environ.get("TYPESAFE_API_KEY")
-            if api_key:
                 self._fast = self._client_cls(api_key=api_key, base_url=base_url)
         return self._fast
 
@@ -119,7 +116,7 @@ class _Router[C]:
             return Route(api, "slow", "disabled", model, detail="disabled in LazyConfig")
         try:
             if self.fast is None:
-                return Route(api, "slow", "disabled", model, detail="no fast model API key")
+                return Route(api, "slow", "disabled", model, detail="no fast_base_url")
             request = prepare()
             return request, compile_schema(request.schema, title=request.name)
         except Ineligible as error:
@@ -144,6 +141,7 @@ class _Router[C]:
             fast_model=answer.model,
             confidence=confidence,
             field_confidences=confidences,
+            fast_output=output,
             fast_input_tokens=answer.usage.input_tokens,
         )
         return output, route
