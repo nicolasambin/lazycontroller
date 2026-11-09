@@ -37,15 +37,12 @@ nav:
       - Configuration: configuration.md
       - Schemas and requests: schemas.md
       - Routing and thresholds: routing.md
-  - "Example: bank transactions": examples/transactions.ipynb
+  - "Example: bank transactions": examples/transactions.md
   - API reference: reference.md
   - Security: security.md
 
 plugins:
   - search
-  - mkdocs-jupyter:
-      execute: false
-      include_source: true
   - mkdocstrings:
       handlers:
         python:

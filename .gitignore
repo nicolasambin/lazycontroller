@@ -226,3 +226,6 @@ __marimo__/
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md
+
+# Docs pages generated from examples/*.ipynb by scripts/notebooks_to_docs.py
+docs/examples/

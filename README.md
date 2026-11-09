@@ -214,6 +214,13 @@ uv run --python 3.13 --isolated pytest     # tests on the minimum version
 uv run ruff check && uv run ruff format    # lint and format
 ```
 
+The documentation site is built with [Zensical](https://zensical.org) from `docs/`:
+
+```bash
+uv run --group docs python scripts/notebooks_to_docs.py   # example notebooks -> pages
+uv run --group docs zensical serve                        # preview, reloads on changes
+```
+
 [`examples/transactions.ipynb`](https://nicolasambin.github.io/lazycontroller/examples/transactions/) is a runnable tour of the library;
 `uv run --with jupyterlab --with matplotlib` opens it without adding either to the project.
 
