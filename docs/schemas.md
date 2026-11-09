@@ -55,26 +55,27 @@ slow model untouched. `Route.reason` is `ineligible` and `Route.detail` says why
   `safety_identifier`, `prompt_cache_key`, `prompt_cache_retention`, `truncation`, `timeout`.
 - `with_raw_response` and `with_streaming_response` calls
 
-## The state: a plain-text transcript
+## The state: the conversation as JSON
 
-The conversation goes to the fast model as plain text, one `Role: content` paragraph per
-message:
+The conversation goes to the fast model as a structured state, one entry per message:
 
+```json
+{
+  "conversation": [
+    {"role": "system", "content": "Categorize this bank transaction."},
+    {"role": "user", "content": "NETFLIX.COM 866-579-7172 CA"}
+  ]
+}
 ```
-System: Triage this customer support ticket.
 
-User: Every API call has returned 500 for the last 20 minutes and our checkout is down!!!
-```
-
-`developer` messages appear as `System`, and multi-part text content is joined line by line.
-Some System One servers accept any JSON as state, others only a string; plain text works with
-all of them, and on the models we measured it gives the same answers and confidence as a JSON
-list of messages.
+`developer` messages appear as `system`, and multi-part text content is joined line by line.
+Structured state is what System One servers recommend; a server that accepts only a string
+state can't serve as the fast model (its calls fail and fall back to the slow model).
 
 ## Writing schemas a decision model answers well
 
-- **Describe every field.** The `description` is the question the decision model answers. "Which
-  team should handle it" beats a bare `team`.
+- **Describe every field.** The `description` is the question the decision model answers.
+  "What the money was spent on" beats a bare `category`.
 - **Prefer labels to numbers.** `Literal["calm", "annoyed", "angry"]` gives the model three
   meaningful options; `int = Field(ge=1, le=3)` gives it `frustration = 1/2/3`. In our tests,
   descriptive labels produced more sensible answers.
@@ -82,7 +83,9 @@ list of messages.
   schema ineligible. If you need both a decision and a text, consider two calls: the decision
   can then go to the fast model.
 - **Fewer fields, higher odds.** Every field has to clear the threshold, so a schema with ten
-  fields is answered by the fast model less often than one with two.
+  fields is answered by the fast model less often than one with two. Yes/no fields are the usual
+  bottleneck: `|2p − 1|` turns a probability of 0.8 into a confidence of 0.6, so a single `bool`
+  can hold back a request whose other fields the model is sure of.
 - **Check what your fast model supports.** Some decision models answer only some question
   types, for instance only yes/no. A request with an unsupported type fails on the fast side
   and falls back to the slow model (`reason="fast_model_error"`).

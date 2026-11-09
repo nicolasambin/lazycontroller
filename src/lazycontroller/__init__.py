@@ -2,7 +2,8 @@
 
 from .client import AsyncOpenAI, OpenAI
 from .lazy import LazyConfig, Route
+from .shadow import ShadowReport
 
-__all__ = ["AsyncOpenAI", "LazyConfig", "OpenAI", "Route"]
+__all__ = ["AsyncOpenAI", "LazyConfig", "OpenAI", "Route", "ShadowReport"]
 
 __version__ = "0.1.0"

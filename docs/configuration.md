@@ -19,7 +19,7 @@ client = OpenAI(
 )
 ```
 
-The model in each call (`model="gpt-5"`) is the slow model: the one your code already uses.
+The model in each call (`model="gpt-6-luna"`) is the slow model: the one your code already uses.
 
 ## `LazyConfig`
 
@@ -27,9 +27,9 @@ The model in each call (`model="gpt-5"`) is the slow model: the one your code al
 |---|---|---|
 | `enabled` | `True` | `False` sends every call straight to the slow model. |
 | `threshold` | `0.9` | Every field's confidence must reach this for the fast model's answer to be used. See [routing](routing.md#choosing-a-threshold). |
-| `fast_model` | `None` | The decision model. `None` uses the server's default (`jev-latest` on TypeSafe). |
-| `fast_base_url` | `None` | The System One server. `None` means TypeSafe. |
-| `fast_api_key` | `None` | Key for the fast model's server. See [keys](#keys) below. |
+| `fast_base_url` | `None` | The System One server. Without it (or `fast_client`) the fast side is off. |
+| `fast_api_key` | `None` | Key for `fast_base_url`. See [keys](#keys) below. |
+| `fast_model` | `None` | The decision model. `None` uses the server's default. |
 | `fast_client` | `None` | A ready `typesafe_sdk.TypeSafeClient` (or `AsyncTypeSafeClient`) to use instead of creating one. |
 | `shadow` | `False` | Ask both models, always return the slow answer, report disagreements. See [shadow mode](routing.md#shadow-mode). |
 | `on_route` | `None` | Called with a [`Route`](routing.md#route) after every intercepted call. |
@@ -43,19 +43,22 @@ The fast model is any server speaking the System One API:
 
 | Server | `fast_base_url` | `fast_api_key` | Example `fast_model` |
 |---|---|---|---|
-| TypeSafe | `None` | `TYPESAFE_API_KEY`, or pass it | `None` (`jev-latest`) |
-| OpenRouter | `"https://openrouter.ai/api"` | your OpenRouter key | `"typesafe/jev-1.13"` |
+| TypeSafe | `"https://api.typesafe.ai"` | your TypeSafe key | `"jev-latest"` |
+| OpenRouter | `"https://openrouter.ai/api"` | your OpenRouter key | `"typesafe/jev-1.14"` |
 | Ollama (local) | `"http://localhost:11434"` | none | `"kev:0.8b-q8_0"` |
 
+Every server is configured the same way: there is no default, and nothing is read from the
+environment, so without `fast_base_url` every call goes to the slow model
+(`reason="disabled"`).
+
 Decision models don't all support the same question types; check yours (see
-[schemas](schemas.md#writing-schemas-a-decision-model-answers-well)).
+[schemas](schemas.md#writing-schemas-a-decision-model-answers-well)). The state is sent as
+structured JSON, so servers that accept only a string state can't serve as the fast model.
 
 ## Keys
 
-- **TypeSafe:** `fast_api_key`, or `TYPESAFE_API_KEY` from the environment. Without either, the
-  fast side is off and every call goes to the slow model (`reason="disabled"`).
-- **Any other server** (`fast_base_url` set): only an explicit `fast_api_key` is sent.
-  `TYPESAFE_API_KEY` is never sent anywhere but TypeSafe. Local servers need no key.
+- **Fast side:** `fast_api_key` is sent to `fast_base_url` and nowhere else. Environment
+  variables such as `TYPESAFE_API_KEY` are not read. Local servers need no key.
 - **Slow side:** as in `openai.OpenAI` (`api_key` or `OPENAI_API_KEY`), except that a local
   `base_url` (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) needs no key. A remote server
   without a key raises the SDK's usual error.
