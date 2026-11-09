@@ -32,3 +32,8 @@ dev = [
     "pytest-asyncio>=1.4.1.post1",
     "ruff>=0.17.3",
 ]
+docs = [
+    "mkdocstrings[python]>=1.0.8",
+    "nbconvert>=7.17.2",
+    "zensical>=0.1.0",
+]

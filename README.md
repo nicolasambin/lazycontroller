@@ -1,6 +1,6 @@
 # lazycontroller
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/nicolasambin/lazycontroller/blob/main/LICENSE)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
@@ -96,7 +96,7 @@ never called. The second could be a subscription or a one-off purchase; Jev is l
 (around 0.7–0.8, below the default threshold of 0.9), so the call goes to GPT as it always did.
 Either way you get the same `ParsedChatCompletion`.
 
-[`examples/transactions.ipynb`](examples/transactions.ipynb) goes further: shadow mode on ten
+[`examples/transactions.ipynb`](https://nicolasambin.github.io/lazycontroller/examples/transactions/) goes further: shadow mode on ten
 transactions, a threshold sweep, `with_lazy`, a call that isn't a decision, and the same thing
 running locally with Ollama. It needs no Jupyter in your project:
 
@@ -116,7 +116,7 @@ API (OpenAI, OpenRouter, Ollama, vLLM, ...).
 | Ollama (local) | `"http://localhost:11434"` | none | `"kev:0.8b-q8_0"` |
 
 Decision models don't all support the same questions: some answer yes/no only.
-More in [configuration](docs/configuration.md#fast-model-servers).
+More in [configuration](https://nicolasambin.github.io/lazycontroller/configuration/#fast-model-servers).
 
 ## How it works
 
@@ -136,7 +136,7 @@ If the fast model errors or lazycontroller can't read a request, the call goes t
 as if lazycontroller weren't there: it can save you calls, never break them.
 
 Details, and how to write schemas a decision model answers well: [schemas and
-requests](docs/schemas.md).
+requests](https://nicolasambin.github.io/lazycontroller/schemas/).
 
 ## Configuration
 
@@ -161,7 +161,7 @@ To vary settings for part of your code, derive a copy, like `with_options`:
 refunds = client.with_lazy(threshold=0.97)  # a wrong answer costs more here
 ```
 
-All settings, keys and providers: [configuration](docs/configuration.md).
+All settings, keys and providers: [configuration](https://nicolasambin.github.io/lazycontroller/configuration/).
 
 ## Monitoring and thresholds
 
@@ -180,7 +180,7 @@ print(report.table())
 report.threshold(min_agreement=0.98)  # lowest threshold that keeps 98% agreement
 ```
 
-Route fields, shadow mode and `ShadowReport`: [routing](docs/routing.md).
+Route fields, shadow mode and `ShadowReport`: [routing](https://nicolasambin.github.io/lazycontroller/routing/).
 
 ## Data and privacy
 
@@ -192,7 +192,7 @@ Route fields, shadow mode and `ShadowReport`: [routing](docs/routing.md).
 - Keys go only where they belong: `fast_api_key` is sent only to `fast_base_url`, and no
   key is picked up from the environment for the fast side.
 
-To report a security issue, see [SECURITY.md](SECURITY.md).
+To report a security issue, see [SECURITY.md](https://nicolasambin.github.io/lazycontroller/security/).
 
 ## Limitations
 
@@ -214,9 +214,16 @@ uv run --python 3.13 --isolated pytest     # tests on the minimum version
 uv run ruff check && uv run ruff format    # lint and format
 ```
 
-[`examples/transactions.ipynb`](examples/transactions.ipynb) is a runnable tour of the library;
+The documentation site is built with [Zensical](https://zensical.org) from `docs/`:
+
+```bash
+uv run --group docs python scripts/notebooks_to_docs.py   # example notebooks -> pages
+uv run --group docs zensical serve                        # preview, reloads on changes
+```
+
+[`examples/transactions.ipynb`](https://nicolasambin.github.io/lazycontroller/examples/transactions/) is a runnable tour of the library;
 `uv run --with jupyterlab --with matplotlib` opens it without adding either to the project.
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](https://github.com/nicolasambin/lazycontroller/blob/main/LICENSE).
