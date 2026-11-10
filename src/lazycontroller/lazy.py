@@ -30,7 +30,7 @@ type Reason = Literal[
 
 @dataclass(frozen=True)
 class Route:
-    """How one request was answered; passed to ``LazyConfig.on_route``."""
+    """How one request was answered; passed to ``FastConfig.on_route``."""
 
     api: Api
     answered_by: Literal["fast", "slow"]
@@ -42,7 +42,7 @@ class Route:
     """The model the caller asked for."""
     fast_model: str | None = None
     confidence: float | None = None
-    """The lowest field confidence, which is what the threshold is compared with."""
+    """The lowest field confidence, which is what ``min_confidence`` is compared with."""
     field_confidences: Mapping[str, float] = field(default_factory=dict)
     fast_output: Mapping[str, Any] | None = None
     """The fast model's answer as a JSON object, whenever it was asked (also when the slow model
@@ -55,46 +55,47 @@ class Route:
 
 
 @dataclass(frozen=True)
-class LazyConfig:
-    """Settings for routing structured-output requests to a fast decision model."""
+class FastConfig:
+    """The fast decision model, and when its answer is used instead of the slow model's."""
 
+    base_url: str | None = None
+    """The System One server: ``https://api.typesafe.ai``, ``https://openrouter.ai/api``,
+    ``http://localhost:11434`` for Ollama, ... Without it (or ``client``) the fast side is off
+    and every call goes to the slow model."""
+    api_key: str | None = None
+    """Key for ``base_url``, and sent nowhere else. Local servers need none."""
+    model: str | None = None
+    """The decision model; ``None`` means the server's default."""
+    min_confidence: float = 0.9
+    """Every field's confidence must reach this for the fast model's answer to be used;
+    otherwise the call goes on to the slow model."""
     enabled: bool = True
     """``False`` sends every call straight to the slow model."""
-    threshold: float = 0.9
-    """Every field's confidence must reach this for the fast model's answer to be used."""
-    fast_base_url: str | None = None
-    """The System One server: ``https://api.typesafe.ai``, ``https://openrouter.ai/api``,
-    ``http://localhost:11434`` for Ollama, ... Without it (or ``fast_client``) the fast side is
-    off and every call goes to the slow model."""
-    fast_api_key: str | None = None
-    """Key for ``fast_base_url``, and sent nowhere else. Local servers need none."""
-    fast_model: str | None = None
-    """The decision model; ``None`` means the server's default."""
     shadow: bool = False
     """Ask the fast model but always return the slow model's answer, reporting where they
     differ."""
     on_route: Callable[[Route], None] | None = None
-    fast_client: TypeSafeClient | AsyncTypeSafeClient | None = None
+    client: TypeSafeClient | AsyncTypeSafeClient | None = None
     """Use this System One client instead of creating one."""
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.threshold <= 1.0:
-            raise ValueError("threshold must be between 0 and 1")
+        if not 0.0 <= self.min_confidence <= 1.0:
+            raise ValueError("min_confidence must be between 0 and 1")
 
 
 class _Router[C]:
-    def __init__(self, config: LazyConfig, client_cls: type[C]) -> None:
+    def __init__(self, config: FastConfig, client_cls: type[C]) -> None:
         self.config = config
         self._client_cls = client_cls
-        self._fast: C | None = config.fast_client  # type: ignore[assignment]
+        self._fast: C | None = config.client  # type: ignore[assignment]
 
     @property
     def fast(self) -> C | None:
         if self._fast is None:
-            if base_url := self.config.fast_base_url:
+            if base_url := self.config.base_url:
                 # Passed explicitly, so the SDK reads neither TYPESAFE_API_KEY nor
                 # TYPESAFE_BASE_URL. It insists on some key; local servers ignore it.
-                api_key = self.config.fast_api_key or "local"
+                api_key = self.config.api_key or "local"
                 self._fast = self._client_cls(api_key=api_key, base_url=base_url)
         return self._fast
 
@@ -104,7 +105,7 @@ class _Router[C]:
         router = type(self)(config)
         if all(
             getattr(config, name) == getattr(self.config, name)
-            for name in ("fast_api_key", "fast_base_url", "fast_client")
+            for name in ("api_key", "base_url", "client")
         ):
             router._fast = self._fast
         return router
@@ -113,10 +114,10 @@ class _Router[C]:
         self, api: Api, prepare: Callable[[], Request], model: str | None
     ) -> tuple[Request, Plan] | Route:
         if not self.config.enabled:
-            return Route(api, "slow", "disabled", model, detail="disabled in LazyConfig")
+            return Route(api, "slow", "disabled", model, detail="disabled in FastConfig")
         try:
             if self.fast is None:
-                return Route(api, "slow", "disabled", model, detail="no fast_base_url")
+                return Route(api, "slow", "disabled", model, detail="no base_url in FastConfig")
             request = prepare()
             return request, compile_schema(request.schema, title=request.name)
         except Ineligible as error:
@@ -132,7 +133,7 @@ class _Router[C]:
     ) -> tuple[dict[str, Any], Route]:
         output, confidences = plan.assemble(answer.answers)
         confidence = min(confidences.values())
-        confident = confidence >= self.config.threshold
+        confident = confidence >= self.config.min_confidence
         route = Route(
             api,
             "fast" if confident and not self.config.shadow else "slow",
@@ -169,7 +170,7 @@ class Call:
 
 
 class Router(_Router[TypeSafeClient]):
-    def __init__(self, config: LazyConfig) -> None:
+    def __init__(self, config: FastConfig) -> None:
         super().__init__(config, TypeSafeClient)
 
     def run(self, call: Call, slow: Callable[[], Any]) -> Any:
@@ -180,7 +181,7 @@ class Router(_Router[TypeSafeClient]):
         request, plan = planned
         try:
             answer = self.fast.system_one(  # type: ignore[union-attr]
-                state=request.state, questions=plan.questions, model=self.config.fast_model
+                state=request.state, questions=plan.questions, model=self.config.model
             )
             output, route = self.judge(call.api, plan, answer, call.model)
         except Exception as error:
@@ -200,7 +201,7 @@ class Router(_Router[TypeSafeClient]):
 
 
 class AsyncRouter(_Router[AsyncTypeSafeClient]):
-    def __init__(self, config: LazyConfig) -> None:
+    def __init__(self, config: FastConfig) -> None:
         super().__init__(config, AsyncTypeSafeClient)
 
     async def run(self, call: Call, slow: Callable[[], Awaitable[Any]]) -> Any:
@@ -211,7 +212,7 @@ class AsyncRouter(_Router[AsyncTypeSafeClient]):
         request, plan = planned
         try:
             answer = await self.fast.system_one(  # type: ignore[union-attr]
-                state=request.state, questions=plan.questions, model=self.config.fast_model
+                state=request.state, questions=plan.questions, model=self.config.model
             )
             output, route = self.judge(call.api, plan, answer, call.model)
         except Exception as error:

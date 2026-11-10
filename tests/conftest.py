@@ -153,13 +153,13 @@ def make_client(routes):
 
     def make(jev=None, openai_content=None, *, is_async=False, **config):
         fake_openai = FakeOpenAI(openai_content or {})
-        lazy = lazycontroller.LazyConfig(fast_client=jev, on_route=routes.append, **config)
+        fast = lazycontroller.FastConfig(client=jev, on_route=routes.append, **config)
         if is_async:
             http = httpx2.AsyncClient(transport=httpx2.MockTransport(fake_openai))
-            client = lazycontroller.AsyncOpenAI(api_key="sk-test", http_client=http, lazy=lazy)
+            client = lazycontroller.AsyncOpenAI(api_key="sk-test", http_client=http, fast=fast)
         else:
             http = httpx2.Client(transport=httpx2.MockTransport(fake_openai))
-            client = lazycontroller.OpenAI(api_key="sk-test", http_client=http, lazy=lazy)
+            client = lazycontroller.OpenAI(api_key="sk-test", http_client=http, fast=fast)
         return client, fake_openai
 
     return make

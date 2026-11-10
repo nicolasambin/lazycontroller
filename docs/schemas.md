@@ -82,7 +82,7 @@ state can't serve as the fast model (its calls fail and fall back to the slow mo
 - **Keep generative fields apart.** One free-text field (a `summary`, a `reason`) makes the whole
   schema ineligible. If you need both a decision and a text, consider two calls: the decision
   can then go to the fast model.
-- **Fewer fields, higher odds.** Every field has to clear the threshold, so a schema with ten
+- **Fewer fields, higher odds.** Every field has to reach `min_confidence`, so a schema with ten
   fields is answered by the fast model less often than one with two. Yes/no fields are the usual
   bottleneck: `|2p − 1|` turns a probability of 0.8 into a confidence of 0.6, so a single `bool`
   can hold back a request whose other fields the model is sure of.

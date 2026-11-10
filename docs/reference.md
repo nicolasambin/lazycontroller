@@ -6,15 +6,15 @@ Generated from the docstrings in the code.
 
 ::: lazycontroller.OpenAI
     options:
-      members: [with_lazy]
+      members: [with_fast]
 
 ::: lazycontroller.AsyncOpenAI
     options:
-      members: [with_lazy]
+      members: [with_fast]
 
 ## Configuration
 
-::: lazycontroller.LazyConfig
+::: lazycontroller.FastConfig
 
 ## Routing
 
