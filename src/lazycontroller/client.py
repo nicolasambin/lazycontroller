@@ -19,7 +19,7 @@ from . import build
 from .lazy import (
     AsyncRouter,
     Call,
-    LazyConfig,
+    FastConfig,
     Router,
     chat_output_json,
     responses_output_json,
@@ -109,12 +109,12 @@ class _Completions(Completions):
     if not TYPE_CHECKING:
 
         def create(self, **kwargs):
-            return self._client.lazy.run(
+            return self._client._router.run(
                 _chat_call(kwargs), lambda: super(_Completions, self).create(**kwargs)
             )
 
         def parse(self, **kwargs):
-            return self._client.lazy.run(
+            return self._client._router.run(
                 _chat_parse_call(kwargs),
                 lambda: super(_Completions, self).parse(**kwargs),
             )
@@ -124,13 +124,13 @@ class _AsyncCompletions(AsyncCompletions):
     if not TYPE_CHECKING:
 
         async def create(self, **kwargs):
-            return await self._client.lazy.run(
+            return await self._client._router.run(
                 _chat_call(kwargs),
                 lambda: super(_AsyncCompletions, self).create(**kwargs),
             )
 
         async def parse(self, **kwargs):
-            return await self._client.lazy.run(
+            return await self._client._router.run(
                 _chat_parse_call(kwargs),
                 lambda: super(_AsyncCompletions, self).parse(**kwargs),
             )
@@ -140,13 +140,13 @@ class _Responses(Responses):
     if not TYPE_CHECKING:
 
         def create(self, **kwargs):
-            return self._client.lazy.run(
+            return self._client._router.run(
                 _responses_call(kwargs),
                 lambda: super(_Responses, self).create(**kwargs),
             )
 
         def parse(self, **kwargs):
-            return self._client.lazy.run(
+            return self._client._router.run(
                 _responses_parse_call(kwargs),
                 lambda: super(_Responses, self).parse(**kwargs),
             )
@@ -156,13 +156,13 @@ class _AsyncResponses(AsyncResponses):
     if not TYPE_CHECKING:
 
         async def create(self, **kwargs):
-            return await self._client.lazy.run(
+            return await self._client._router.run(
                 _responses_call(kwargs),
                 lambda: super(_AsyncResponses, self).create(**kwargs),
             )
 
         async def parse(self, **kwargs):
-            return await self._client.lazy.run(
+            return await self._client._router.run(
                 _responses_parse_call(kwargs),
                 lambda: super(_AsyncResponses, self).parse(**kwargs),
             )
@@ -204,15 +204,15 @@ def _with_local_key(kwargs: dict[str, Any]) -> dict[str, Any]:
 class OpenAI(openai.OpenAI):
     """``openai.OpenAI`` that lets a fast model answer the structured-output calls it is sure of.
 
-    Takes every ``openai.OpenAI`` argument, plus ``lazy`` for the routing settings. A local
+    Takes every ``openai.OpenAI`` argument, plus ``fast`` for the fast model. A local
     ``base_url`` such as Ollama's needs no ``api_key``.
     """
 
-    lazy: Router
+    _router: Router
 
-    def __init__(self, *args: Any, lazy: LazyConfig | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, fast: FastConfig | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **_with_local_key(kwargs))
-        self.lazy = Router(lazy or LazyConfig())
+        self._router = Router(fast or FastConfig())
 
     @cached_property
     def chat(self) -> Chat:
@@ -224,31 +224,32 @@ class OpenAI(openai.OpenAI):
 
     def copy(self, *args: Any, **kwargs: Any) -> "OpenAI":
         new = super().copy(*args, **kwargs)
-        new.lazy = self.lazy
+        new._router = self._router
         return new
 
     with_options = copy
 
-    def with_lazy(self, **changes: Any) -> "OpenAI":
-        """A copy of this client with some ``LazyConfig`` settings changed.
+    def with_fast(self, **changes: Any) -> "OpenAI":
+        """A copy of this client with some ``FastConfig`` settings changed.
 
-        The ``with_options`` of routing: ``client.with_lazy(threshold=0.95)`` for calls where a
-        wrong answer costs more, ``client.with_lazy(enabled=False)`` to skip the fast model.
+        The ``with_options`` of routing: ``client.with_fast(min_confidence=0.95)`` for calls
+        where a wrong answer costs more, ``client.with_fast(enabled=False)`` to skip the fast
+        model.
         The original client is unchanged.
         """
         new = self.copy()
-        new.lazy = self.lazy.derive(**changes)
+        new._router = self._router.derive(**changes)
         return new
 
 
 class AsyncOpenAI(openai.AsyncOpenAI):
     """``openai.AsyncOpenAI`` counterpart of ``lazycontroller.OpenAI``."""
 
-    lazy: AsyncRouter
+    _router: AsyncRouter
 
-    def __init__(self, *args: Any, lazy: LazyConfig | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, fast: FastConfig | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **_with_local_key(kwargs))
-        self.lazy = AsyncRouter(lazy or LazyConfig())
+        self._router = AsyncRouter(fast or FastConfig())
 
     @cached_property
     def chat(self) -> AsyncChat:
@@ -260,18 +261,19 @@ class AsyncOpenAI(openai.AsyncOpenAI):
 
     def copy(self, *args: Any, **kwargs: Any) -> "AsyncOpenAI":
         new = super().copy(*args, **kwargs)
-        new.lazy = self.lazy
+        new._router = self._router
         return new
 
     with_options = copy
 
-    def with_lazy(self, **changes: Any) -> "AsyncOpenAI":
-        """A copy of this client with some ``LazyConfig`` settings changed.
+    def with_fast(self, **changes: Any) -> "AsyncOpenAI":
+        """A copy of this client with some ``FastConfig`` settings changed.
 
-        The ``with_options`` of routing: ``client.with_lazy(threshold=0.95)`` for calls where a
-        wrong answer costs more, ``client.with_lazy(enabled=False)`` to skip the fast model.
+        The ``with_options`` of routing: ``client.with_fast(min_confidence=0.95)`` for calls
+        where a wrong answer costs more, ``client.with_fast(enabled=False)`` to skip the fast
+        model.
         The original client is unchanged.
         """
         new = self.copy()
-        new.lazy = self.lazy.derive(**changes)
+        new._router = self._router.derive(**changes)
         return new

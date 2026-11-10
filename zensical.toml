@@ -11,7 +11,7 @@ nav = [
   { "Guides" = [
     { "Configuration" = "configuration.md" },
     { "Schemas and requests" = "schemas.md" },
-    { "Routing and thresholds" = "routing.md" },
+    { "Routing and monitoring" = "routing.md" },
   ] },
   { "Example: bank transactions" = "examples/transactions.md" },
   { "API reference" = "reference.md" },

@@ -52,13 +52,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from lazycontroller import LazyConfig, OpenAI
+from lazycontroller import FastConfig, OpenAI
 
 client = OpenAI(  # the slow side, as before: reads OPENAI_API_KEY
-    lazy=LazyConfig(  # the fast side: a System One decision model
-        fast_model="typesafe/jev-1.14",
-        fast_base_url="https://openrouter.ai/api",
-        fast_api_key=os.environ["OPENROUTER_API_KEY"],
+    fast=FastConfig(  # the fast side: a System One decision model
+        base_url="https://openrouter.ai/api",
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        model="typesafe/jev-1.14",
     ),
 )
 
@@ -93,11 +93,11 @@ for line in ["NETFLIX.COM 866-579-7172 CA", "GITHUB, INC. SAN FRANCISCO"]:
 
 Jev is certain the first line is a subscription (confidence 1.00), so it answers and GPT is
 never called. The second could be a subscription or a one-off purchase; Jev is less sure
-(around 0.7–0.8, below the default threshold of 0.9), so the call goes to GPT as it always did.
+(around 0.7–0.8, below the default `min_confidence` of 0.9), so the call goes to GPT as it always did.
 Either way you get the same `ParsedChatCompletion`.
 
 [`examples/transactions.ipynb`](https://nicolasambin.github.io/lazycontroller/examples/transactions/) goes further: shadow mode on ten
-transactions, a threshold sweep, `with_lazy`, a call that isn't a decision, and the same thing
+transactions, a sweep over `min_confidence`, `with_fast`, a call that isn't a decision, and the same thing
 running locally with Ollama. It needs no Jupyter in your project:
 
 ```bash
@@ -109,7 +109,7 @@ uv run --with jupyterlab --with matplotlib --env-file .env jupyter lab examples/
 The fast side is any server speaking the System One API; the slow side is any OpenAI-compatible
 API (OpenAI, OpenRouter, Ollama, vLLM, ...).
 
-| Fast model server | `fast_base_url` | `fast_api_key` | Example `fast_model` |
+| Fast model server | `base_url` | `api_key` | Example `model` |
 |---|---|---|---|
 | TypeSafe | `"https://api.typesafe.ai"` | your TypeSafe key | `"jev-latest"` |
 | OpenRouter | `"https://openrouter.ai/api"` | your OpenRouter key | `"typesafe/jev-1.14"` |
@@ -128,7 +128,7 @@ For `chat.completions.create` / `parse` and `responses.create` / `parse`:
    untouched.
 2. **Ask the fast model.** All fields go in one request, with the conversation as structured
    JSON state and each field's `description` as its question.
-3. **Gate on confidence.** If *every* field reaches the threshold, lazycontroller builds a real
+3. **Gate on confidence.** If *every* field reaches `min_confidence`, lazycontroller builds a real
    OpenAI response object from the fast answer. Otherwise the original request goes to the slow
    model. It's all or nothing, so you never get a half-fast, half-slow answer.
 
@@ -141,15 +141,15 @@ requests](https://nicolasambin.github.io/lazycontroller/schemas/).
 ## Configuration
 
 `OpenAI` / `AsyncOpenAI` take every `openai` argument (the slow side) plus
-`lazy=LazyConfig(...)`:
+`fast=FastConfig(...)`:
 
 ```python
-LazyConfig(
+FastConfig(
+    base_url=None,  # the System One server; None turns the fast side off
+    api_key=None,  # key for base_url, sent nowhere else
+    model=None,  # the decision model; None means the server's default
+    min_confidence=0.9,  # every field must reach it, or the call goes to the slow model
     enabled=True,  # False sends everything to the slow model
-    threshold=0.9,  # min confidence of every field
-    fast_base_url=None,  # the System One server; None turns the fast side off
-    fast_api_key=None,  # key for fast_base_url, sent nowhere else
-    fast_model=None,  # the decision model; None means the server's default
     shadow=False,  # ask both, return the slow answer, report disagreements
     on_route=None,  # called with a Route after every intercepted call
 )
@@ -158,26 +158,26 @@ LazyConfig(
 To vary settings for part of your code, derive a copy, like `with_options`:
 
 ```python
-refunds = client.with_lazy(threshold=0.97)  # a wrong answer costs more here
+refunds = client.with_fast(min_confidence=0.97)  # a wrong answer costs more here
 ```
 
 All settings, keys and providers: [configuration](https://nicolasambin.github.io/lazycontroller/configuration/).
 
-## Monitoring and thresholds
+## Monitoring and choosing `min_confidence`
 
 Every intercepted call produces a `Route`: who answered (`fast` or `slow`), why, and the
 confidence of each field. Collect them to see how much traffic the fast model takes.
 
-The default threshold, 0.9, is cautious. To choose yours, run with `shadow=True` on real
+The default `min_confidence`, 0.9, is cautious. To choose yours, run with `shadow=True` on real
 traffic: both models answer, your users get the slow answer, and each route records whether the
-two agreed. A `ShadowReport` turns those routes into coverage and agreement per threshold:
+two agreed. A `ShadowReport` turns those routes into coverage and agreement for each `min_confidence`:
 
 ```python
 from lazycontroller import ShadowReport
 
 report = ShadowReport(routes)
 print(report.table())
-report.threshold(min_agreement=0.98)  # lowest threshold that keeps 98% agreement
+report.min_confidence(min_agreement=0.98)  # lowest value that keeps 98% agreement
 ```
 
 Route fields, shadow mode and `ShadowReport`: [routing](https://nicolasambin.github.io/lazycontroller/routing/).
@@ -189,7 +189,7 @@ Route fields, shadow mode and `ShadowReport`: [routing](https://nicolasambin.git
   enabling it. A local fast model keeps everything on your machine.
 - In shadow mode, eligible calls go to both providers.
 - Free models on some platforms may use requests for training; don't send real data to them.
-- Keys go only where they belong: `fast_api_key` is sent only to `fast_base_url`, and no
+- Keys go only where they belong: `FastConfig.api_key` is sent only to `FastConfig.base_url`, and no
   key is picked up from the environment for the fast side.
 
 To report a security issue, see [SECURITY.md](https://nicolasambin.github.io/lazycontroller/security/).

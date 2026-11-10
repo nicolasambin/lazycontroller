@@ -31,7 +31,7 @@ OPENAI_TICKET = {"team": "billing", "is_urgent": False, "severity": 1}
 def test_drop_in_subclass_of_openai_client():
     client = lazycontroller.OpenAI(api_key="sk-test")
     assert isinstance(client, openai.OpenAI)
-    assert client.with_options(timeout=5).lazy is client.lazy
+    assert client.with_options(timeout=5)._router is client._router
 
 
 def test_confident_fast_model_answers_chat_parse_alone(make_client, routes):
@@ -86,9 +86,9 @@ def test_low_confidence_falls_back_to_the_requested_model(make_client, routes):
     assert routes[0].fast_output == {"team": "technical", "is_urgent": True, "severity": 3}
 
 
-def test_threshold_is_configurable(make_client):
+def test_min_confidence_is_configurable(make_client):
     client, fake_openai = make_client(
-        FakeJev(JEV_PICKS, confidence=0.6), OPENAI_TICKET, threshold=0.15
+        FakeJev(JEV_PICKS, confidence=0.6), OPENAI_TICKET, min_confidence=0.15
     )
     client.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
     assert fake_openai.requests == []
@@ -179,12 +179,12 @@ def test_plain_chat_without_schema_is_untouched(make_client, routes):
     assert routes[0].reason == "ineligible"
 
 
-def test_no_fast_base_url_means_plain_openai(make_client, routes, monkeypatch):
+def test_no_base_url_means_plain_openai(make_client, routes, monkeypatch):
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")  # no longer a default
     client, fake_openai = make_client(None, OPENAI_TICKET)
     client.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
     assert len(fake_openai.requests) == 1
-    assert (routes[0].reason, routes[0].detail) == ("disabled", "no fast_base_url")
+    assert (routes[0].reason, routes[0].detail) == ("disabled", "no base_url in FastConfig")
 
 
 def test_fast_model_errors_fall_back_to_slow_model(make_client, routes):
@@ -316,52 +316,55 @@ def test_explicit_or_env_key_is_kept(monkeypatch):
     )
 
 
-def test_with_lazy_changes_only_the_copy(make_client, routes):
+def test_with_fast_changes_only_the_copy(make_client, routes):
     jev = FakeJev(JEV_PICKS, confidence=0.6)
     client, fake_openai = make_client(jev, OPENAI_TICKET)
-    lenient = client.with_lazy(threshold=0.5)
+    lenient = client.with_fast(min_confidence=0.5)
 
     lenient.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
     client.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
 
     assert [r.reason for r in routes] == ["confident", "low_confidence"]
     assert len(fake_openai.requests) == 1
-    assert (client.lazy.config.threshold, lenient.lazy.config.threshold) == (0.9, 0.5)
-    assert lenient.lazy.fast is client.lazy.fast
+    assert (client._router.config.min_confidence, lenient._router.config.min_confidence) == (
+        0.9,
+        0.5,
+    )
+    assert lenient._router.fast is client._router.fast
     assert isinstance(lenient, lazycontroller.OpenAI)
 
 
-def test_with_lazy_can_disable_and_pick_a_model(make_client, routes):
+def test_with_fast_can_disable_and_pick_a_model(make_client, routes):
     jev = FakeJev(JEV_PICKS)
     client, fake_openai = make_client(jev, OPENAI_TICKET)
 
-    client.with_lazy(enabled=False).chat.completions.parse(
+    client.with_fast(enabled=False).chat.completions.parse(
         model="gpt-5", messages=MESSAGES, response_format=Ticket
     )
-    client.with_lazy(fast_model="kev:0.8b-q8_0").chat.completions.parse(
+    client.with_fast(model="kev:0.8b-q8_0").chat.completions.parse(
         model="gpt-5", messages=MESSAGES, response_format=Ticket
     )
 
-    assert (routes[0].reason, routes[0].detail) == ("disabled", "disabled in LazyConfig")
+    assert (routes[0].reason, routes[0].detail) == ("disabled", "disabled in FastConfig")
     assert len(fake_openai.requests) == 1
     assert [r["model"] for r in jev.requests] == ["kev:0.8b-q8_0"]
 
 
-def test_with_lazy_survives_with_options_and_validates(make_client):
+def test_with_fast_survives_with_options_and_validates(make_client):
     client, _ = make_client(FakeJev())
-    strict = client.with_lazy(threshold=0.99)
-    assert strict.with_options(timeout=5).lazy.config.threshold == 0.99
+    strict = client.with_fast(min_confidence=0.99)
+    assert strict.with_options(timeout=5)._router.config.min_confidence == 0.99
     with pytest.raises(TypeError):
-        client.with_lazy(treshold=0.5)
+        client.with_fast(min_confidense=0.5)
     with pytest.raises(ValueError):
-        client.with_lazy(threshold=2)
+        client.with_fast(min_confidence=2)
 
 
-async def test_async_with_lazy(make_client, routes):
+async def test_async_with_fast(make_client, routes):
     client, fake_openai = make_client(
         AsyncFakeJev(JEV_PICKS, confidence=0.6), OPENAI_TICKET, is_async=True
     )
-    lenient = client.with_lazy(threshold=0.5)
+    lenient = client.with_fast(min_confidence=0.5)
     await lenient.chat.completions.parse(model="gpt-5", messages=MESSAGES, response_format=Ticket)
     assert isinstance(lenient, lazycontroller.AsyncOpenAI)
     assert routes[0].reason == "confident"
@@ -404,7 +407,7 @@ def test_typesafe_key_from_env_never_goes_to_another_server(auth_server, monkeyp
     url, seen = auth_server
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")
     assert (
-        _parse_through_router(lazycontroller.LazyConfig(fast_base_url=url, on_route=routes.append))
+        _parse_through_router(lazycontroller.FastConfig(base_url=url, on_route=routes.append))
         == "slow model"
     )
     assert seen == ["Bearer local"]
@@ -414,7 +417,7 @@ def test_typesafe_key_from_env_never_goes_to_another_server(auth_server, monkeyp
 def test_explicit_key_goes_to_the_configured_server(auth_server, monkeypatch):
     url, seen = auth_server
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")
-    _parse_through_router(lazycontroller.LazyConfig(fast_base_url=url, fast_api_key="provider-key"))
+    _parse_through_router(lazycontroller.FastConfig(base_url=url, api_key="provider-key"))
     assert seen == ["Bearer provider-key"]
 
 
@@ -422,7 +425,7 @@ def test_typesafe_environment_variables_are_ignored(auth_server, monkeypatch, ro
     url, seen = auth_server
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")
     monkeypatch.setenv("TYPESAFE_BASE_URL", url)
-    assert _parse_through_router(lazycontroller.LazyConfig(on_route=routes.append)) == "slow model"
+    assert _parse_through_router(lazycontroller.FastConfig(on_route=routes.append)) == "slow model"
     assert seen == []
     assert routes[0].reason == "disabled"
 
