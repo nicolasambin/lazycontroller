@@ -61,30 +61,30 @@ def test_bands_group_by_confidence_highest_first():
     ]
 
 
-def test_min_confidence_is_the_lowest_one_that_keeps_agreement():
+def test_suggest_min_confidence_is_the_lowest_one_that_keeps_agreement():
     report = ShadowReport(ROUTES)
-    assert report.min_confidence(1.0, min_samples=5) == 0.81
+    assert report.suggest_min_confidence(1.0, min_samples=5) == 0.81
     # 0.7 alone would give 10/11, but 0.76 above it gives 8/9 (89%): not good enough for 0.9.
-    assert report.min_confidence(0.9, min_samples=5) == 0.81
-    assert report.min_confidence(0.85, min_samples=5) == 0.7
-    assert report.min_confidence(0.0, min_samples=5) == 0.4
+    assert report.suggest_min_confidence(0.9, min_samples=5) == 0.81
+    assert report.suggest_min_confidence(0.85, min_samples=5) == 0.7
+    assert report.suggest_min_confidence(0.0, min_samples=5) == 0.4
 
 
-def test_min_confidence_needs_enough_samples():
+def test_suggest_min_confidence_needs_enough_samples():
     report = ShadowReport(ROUTES)
-    assert report.min_confidence(1.0) is None  # default min_samples=20, only 15 calls
-    assert report.min_confidence(1.0, min_samples=9) is None  # 0.81 covers only 8
+    assert report.suggest_min_confidence(1.0) is None  # default min_samples=20, only 15 calls
+    assert report.suggest_min_confidence(1.0, min_samples=9) is None  # 0.81 covers only 8
 
 
-def test_min_confidence_does_not_rest_on_a_lucky_dip():
+def test_suggest_min_confidence_does_not_rest_on_a_lucky_dip():
     # Agreement is 100% at 0.5 only because a disagreement drops out between 0.5 and 0.6.
     routes = [shadow(0.9), shadow(0.8), shadow(0.7, agree=False), shadow(0.6), shadow(0.5)]
-    assert ShadowReport(routes).min_confidence(0.8, min_samples=1) == 0.8
+    assert ShadowReport(routes).suggest_min_confidence(0.8, min_samples=1) == 0.8
 
 
-def test_min_confidence_validates_min_agreement():
+def test_suggest_min_confidence_validates_min_agreement():
     with pytest.raises(ValueError):
-        ShadowReport(ROUTES).min_confidence(1.5)
+        ShadowReport(ROUTES).suggest_min_confidence(1.5)
 
 
 def test_table_lists_bands_and_min_confidences():

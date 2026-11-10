@@ -1,7 +1,7 @@
 [project]
 name = "lazycontroller"
 version = "0.1.0"
-description = "Drop-in wrapper for the OpenAI SDK that tries a fast model first and calls the slow model only when confidence is low."
+description = "A drop-in replacement for the openai Python client that sends structured-output calls to a fast decision model first, and to the LLM you already use whenever that model isn't confident or the call isn't a decision."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
