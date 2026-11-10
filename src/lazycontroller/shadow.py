@@ -87,7 +87,9 @@ class ShadowReport:
             bands.append(Band(low, high, len(inside), sum(inside)))
         return bands[::-1]
 
-    def min_confidence(self, min_agreement: float, *, min_samples: int = 20) -> float | None:
+    def suggest_min_confidence(
+        self, min_agreement: float, *, min_samples: int = 20
+    ) -> float | None:
         """The lowest ``min_confidence`` at which agreement stays at or above ``min_agreement``.
 
         "Stays" means at that value and at every higher one that still covers at least

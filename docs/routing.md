@@ -90,7 +90,7 @@ from lazycontroller import ShadowReport
 report = ShadowReport(routes)  # non-shadow routes are ignored
 print(report.table())
 
-report.min_confidence(min_agreement=0.98)  # e.g. 0.78, or None if there isn't enough data
+report.suggest_min_confidence(min_agreement=0.98)  # e.g. 0.78, or None if there isn't enough data
 report.at(0.78)  # Point(min_confidence=0.78, taken=14, agreed=14, total=22)
 ```
 
@@ -113,14 +113,14 @@ min confidence   fast takes      agreement
 | Method | Returns |
 |---|---|
 | `table(values=...)` | the plain-text summary above |
-| `min_confidence(min_agreement, min_samples=20)` | the lowest `min_confidence` at which agreement stays at or above `min_agreement`, at that value and every higher one covering at least `min_samples` calls; `None` if no value qualifies |
+| `suggest_min_confidence(min_agreement, min_samples=20)` | the lowest `min_confidence` at which agreement stays at or above `min_agreement`, at that value and every higher one covering at least `min_samples` calls; `None` if no value qualifies |
 | `at(min_confidence)` | a `Point` with `taken`, `agreed`, `total`, `coverage` and `agreement` |
 | `curve(values=...)` | a list of `Point`s, by default every 0.05 from 0 to 1: ready to plot coverage and agreement against `min_confidence` |
 | `bands(edges=...)` | calls grouped by confidence, with their agreement |
 
-`min_confidence()` looks for agreement that *stays* above the bar from that point up, so a lucky
-stretch can't pull it down, and it won't answer from a handful of calls: with too little shadow
-traffic it returns `None`.
+`suggest_min_confidence()` looks for agreement that *stays* above the bar from that point up,
+so a lucky stretch can't pull it down, and it won't answer from a handful of calls: with too
+little shadow traffic it returns `None`.
 
 Agreement is not correctness: when the two disagree, the slow model is sometimes the one that's
 wrong, and on ambiguous inputs either answer can be defensible. `Route.fast_output` shows what

@@ -4,11 +4,10 @@
 ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
-Let a fast decision model answer the structured-output calls your code already makes to an LLM,
-by changing one import.
-
-> **Alpha.** lazycontroller works and is tested, but its API may still change between 0.x
-> releases.
+lazycontroller is a drop-in replacement for the `openai` Python client. When your code asks an
+LLM for structured output that is really a decision (a category, a yes/no, a score), it asks a
+fast decision model first and uses its answer if every field is confident enough; otherwise the
+call goes to your LLM, unchanged.
 
 ## Why
 
@@ -59,6 +58,7 @@ client = OpenAI(  # the slow side, as before: reads OPENAI_API_KEY
         base_url="https://openrouter.ai/api",
         api_key=os.environ["OPENROUTER_API_KEY"],
         model="typesafe/jev-1.14",
+        min_confidence=0.9,  # every field must reach it, or the call goes to GPT
     ),
 )
 
@@ -177,7 +177,7 @@ from lazycontroller import ShadowReport
 
 report = ShadowReport(routes)
 print(report.table())
-report.min_confidence(min_agreement=0.98)  # lowest value that keeps 98% agreement
+report.suggest_min_confidence(min_agreement=0.98)  # lowest value keeping 98% agreement
 ```
 
 Route fields, shadow mode and `ShadowReport`: [routing](https://nicolasambin.github.io/lazycontroller/routing/).
